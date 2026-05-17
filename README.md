@@ -81,11 +81,9 @@ When renting on vast.ai:
 
 ```bash
 mkdir -p /app/Deep-Live-Cam/models
-wget -q -O /app/Deep-Live-Cam/models/inswapper_128_fp16.onnx "<model-url>"
+wget -q -O /app/Deep-Live-Cam/models/inswapper_128.onnx "https://huggingface.co/hacksider/deep-live-cam/resolve/main/inswapper_128.onnx"
 /app/entrypoint.sh
 ```
-
-Replace `<model-url>` with the direct download link from the Deep-Live-Cam releases page.
 
 > **Why SSH mode?** vast.ai overwrites the Docker entrypoint to set up its SSH server. The on-start script must call `/app/entrypoint.sh` explicitly at the end, which is what starts MediaMTX and the dashboard. Using "Docker ENTRYPOINT" mode causes the on-start script to be passed as a raw argument to the entrypoint rather than executed by bash.
 
@@ -124,7 +122,7 @@ grep -Ev '^(opencv-python|onnxruntime-gpu|onnxruntime-silicon)' \
   | python3.11 -m pip install -q -r /dev/stdin
 
 mkdir -p /app/Deep-Live-Cam/models
-wget -q -O /app/Deep-Live-Cam/models/inswapper_128_fp16.onnx "<model-url>"
+wget -q -O /app/Deep-Live-Cam/models/inswapper_128.onnx "https://huggingface.co/hacksider/deep-live-cam/resolve/main/inswapper_128.onnx"
 
 mediamtx /app/mediamtx.yml &
 python3.11 /app/dashboard.py
