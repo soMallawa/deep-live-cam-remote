@@ -17,6 +17,12 @@ DLC_PATH = "/app/Deep-Live-Cam"
 sys.path.insert(0, DLC_PATH)
 sys.path.insert(0, os.path.join(DLC_PATH, "modules"))
 
+# Stub out modules.ui before any DLC import triggers it.
+# modules.core imports modules.ui at load time which pulls in PySide6 -> libEGL.so.1,
+# a GUI library not present on headless GPU servers.
+import types as _types  # noqa: E402
+sys.modules.setdefault("modules.ui", _types.ModuleType("modules.ui"))
+
 RTSP_IN = os.environ.get("RTSP_IN", "rtsp://127.0.0.1:8554/cam_in")
 RTSP_OUT = os.environ.get("RTSP_OUT", "rtsp://127.0.0.1:8554/cam_out")
 SOURCE_IMAGE = os.environ.get("SOURCE_IMAGE", "/app/source.jpg")
