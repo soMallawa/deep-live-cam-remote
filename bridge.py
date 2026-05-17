@@ -120,15 +120,25 @@ def wait_for_capture():
     return None
 
 
+_nvenc_ok = None  # cached after first real test
+
 def _nvenc_available():
+    global _nvenc_ok
+    if _nvenc_ok is not None:
+        return _nvenc_ok
     try:
         r = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-encoders"],
-            capture_output=True, text=True, timeout=10
+            ["ffmpeg", "-hide_banner", "-loglevel", "error",
+             "-f", "lavfi", "-i", "color=black:s=128x128:r=1",
+             "-frames:v", "1", "-c:v", "h264_nvenc", "-f", "null", "-"],
+            capture_output=True, text=True, timeout=15,
         )
-        return "h264_nvenc" in r.stdout
+        _nvenc_ok = (r.returncode == 0)
     except Exception:
-        return False
+        _nvenc_ok = False
+    if not _nvenc_ok:
+        log("h264_nvenc probe failed, will use libx264")
+    return _nvenc_ok
 
 
 def start_encoder(rtsp_url, width, height, fps):
