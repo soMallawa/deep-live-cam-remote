@@ -80,8 +80,8 @@ When renting on vast.ai:
 - **On-start script**:
 
 ```bash
-mkdir -p /app/models
-wget -q -O /app/models/inswapper_128_fp16.onnx "<model-url>"
+mkdir -p /app/Deep-Live-Cam/models
+wget -q -O /app/Deep-Live-Cam/models/inswapper_128_fp16.onnx "<model-url>"
 /app/entrypoint.sh
 ```
 
@@ -123,8 +123,8 @@ grep -Ev '^(opencv-python|onnxruntime-gpu|onnxruntime-silicon)' \
   /app/Deep-Live-Cam/requirements.txt \
   | python3.11 -m pip install -q -r /dev/stdin
 
-mkdir -p /app/models
-wget -q -O /app/models/inswapper_128_fp16.onnx "<model-url>"
+mkdir -p /app/Deep-Live-Cam/models
+wget -q -O /app/Deep-Live-Cam/models/inswapper_128_fp16.onnx "<model-url>"
 
 mediamtx /app/mediamtx.yml &
 python3.11 /app/dashboard.py
