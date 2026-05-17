@@ -28,5 +28,5 @@ shutdown() {
 
 trap shutdown SIGINT SIGTERM
 
-wait -n "$MEDIAMTX_PID" "$BRIDGE_PID"
+wait -n "$MEDIAMTX_PID" "$BRIDGE_PID" || true
 shutdown

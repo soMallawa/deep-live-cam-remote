@@ -89,6 +89,7 @@ def load_source():
 def open_capture():
     os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
         "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|framedrop;1"
+        "|stimeout;5000000"  # 5-second socket timeout so cap.read() never blocks forever
     )
     cap = cv2.VideoCapture(RTSP_IN, cv2.CAP_FFMPEG)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
@@ -113,49 +114,39 @@ def wait_for_capture():
     return None
 
 
+def _nvenc_available():
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            capture_output=True, text=True, timeout=10
+        )
+        return "h264_nvenc" in r.stdout
+    except Exception:
+        return False
+
+
 def start_encoder(rtsp_url, width, height, fps):
+    use_nvenc = _nvenc_available()
+    if use_nvenc:
+        encoder_args = ["-c:v", "h264_nvenc", "-preset", "p1", "-tune", "ll", "-rc", "cbr"]
+        log("Using h264_nvenc encoder")
+    else:
+        encoder_args = ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency"]
+        log("h264_nvenc not available, falling back to libx264")
+
     cmd = [
         "ffmpeg",
-        "-hide_banner",
-        "-loglevel",
-        "warning",
-        "-fflags",
-        "nobuffer",
-        "-flags",
-        "low_delay",
-        "-f",
-        "rawvideo",
-        "-pix_fmt",
-        "bgr24",
-        "-s",
-        f"{width}x{height}",
-        "-r",
-        str(fps),
-        "-i",
-        "-",
-        "-an",
-        "-c:v",
-        "h264_nvenc",
-        "-preset",
-        "p1",
-        "-tune",
-        "ll",
-        "-rc",
-        "cbr",
-        "-b:v",
-        BITRATE,
-        "-maxrate",
-        BITRATE,
-        "-bufsize",
-        BITRATE,
-        "-g",
-        str(max(1, fps // 2)),
-        "-bf",
-        "0",
-        "-f",
-        "rtsp",
-        "-rtsp_transport",
-        "tcp",
+        "-hide_banner", "-loglevel", "warning",
+        "-fflags", "nobuffer", "-flags", "low_delay",
+        "-f", "rawvideo", "-pix_fmt", "bgr24",
+        "-s", f"{width}x{height}", "-r", str(fps),
+        "-i", "-", "-an",
+        *encoder_args,
+        "-b:v", BITRATE, "-maxrate", BITRATE, "-bufsize", BITRATE,
+        "-g", str(max(1, fps // 2)),
+        "-bf", "0",
+        "-pkt_size", "1400",
+        "-f", "rtsp", "-rtsp_transport", "tcp",
         rtsp_url,
     ]
 
@@ -178,15 +169,22 @@ def stop_encoder(proc):
         proc.kill()
 
 
-def get_stream_dimensions(cap):
+def get_stream_properties(cap):
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
     if width <= 0 or height <= 0:
-        return WIDTH, HEIGHT
-    return width, height
+        width, height = WIDTH, HEIGHT
+        log(f"Stream did not report dimensions; using fallback {WIDTH}x{HEIGHT}")
+    if fps <= 0 or fps > 120:
+        fps = FPS
+        log(f"Stream did not report a valid FPS; using fallback {FPS}")
+    else:
+        fps = int(round(fps))
+    return width, height, fps
 
 
-def process_stream(cap, encoder, out_width, out_height):
+def process_stream(cap, encoder, out_width, out_height, out_fps):
     frame_count = 0
     fps_started = time.time()
     det_interval = max(1, FPS // 6)
@@ -221,7 +219,7 @@ def process_stream(cap, encoder, out_width, out_height):
         except (BrokenPipeError, OSError):
             log("FFmpeg pipe broke; restarting output encoder...")
             stop_encoder(encoder)
-            encoder = start_encoder(RTSP_OUT, out_width, out_height, FPS)
+            encoder = start_encoder(RTSP_OUT, out_width, out_height, out_fps)
             if encoder is None:
                 return True, None
 
@@ -259,18 +257,17 @@ def main():
                 log("RTSP input was not available before retry limit.")
                 sys.exit(1)
 
-            in_width, in_height = get_stream_dimensions(cap)
-            out_width = in_width if in_width > 0 else WIDTH
-            out_height = in_height if in_height > 0 else HEIGHT
-            log(f"Input stream: {in_width}x{in_height}; output stream: {out_width}x{out_height}@{FPS}")
+            in_width, in_height, in_fps = get_stream_properties(cap)
+            out_width, out_height, out_fps = in_width, in_height, in_fps
+            log(f"Input stream: {in_width}x{in_height}@{in_fps}fps; output: {out_width}x{out_height}@{out_fps}fps")
 
             if encoder is None or encoder.poll() is not None:
                 log(f"Starting RTSP output encoder: {RTSP_OUT}")
-                encoder = start_encoder(RTSP_OUT, out_width, out_height, FPS)
+                encoder = start_encoder(RTSP_OUT, out_width, out_height, out_fps)
                 if encoder is None:
                     sys.exit(1)
 
-            keep_encoder, encoder = process_stream(cap, encoder, out_width, out_height)
+            keep_encoder, encoder = process_stream(cap, encoder, out_width, out_height, out_fps)
             cap.release()
             cap = None
 
