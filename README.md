@@ -39,33 +39,128 @@ MediaMTX handles ICE, DTLS, SRTP, WHIP, and WHEP. Deep-Live-Cam only sees RTSP i
 - A source face image mounted or copied to `/app/source.jpg`.
 - Public access to `8889/tcp` and `8189/udp`. Expose `8554/tcp` only if testing RTSP directly.
 
-## Quick Start
+## Deploying on vast.ai
 
-Build and run locally or on a vast.ai instance:
-Build and run locally or on a vast.ai instance:
-**Send feed from phone (zero OBS):**
+vast.ai instances are Docker containers themselves, so `docker compose up` will not work there — nested Docker is not available. Use one of the two approaches below.
+
+### Option A — Docker Hub image (recommended)
+
+Build the image on your local machine and push it to Docker Hub:
+
 ```bash
-git clone https://github.com/soMallawa/droidcam-whip-c
-cd droidcam-whip-c && make
-./droidcam-whip 192.168.1.100 rtsp://<vast-ai-ip>:8554/cam_in
+git clone https://github.com/soMallawa/deep-live-cam-remote
+cd deep-live-cam-remote
+docker build -t yourdockerhub/deep-live-cam-remote:latest .
+docker push yourdockerhub/deep-live-cam-remote:latest
 ```
 
-Or with OBS:
+When renting on vast.ai:
+
+- **Image**: `yourdockerhub/deep-live-cam-remote:latest`
+- **Extra ports**: `8889/tcp`, `8189/udp`, `8554/tcp`
+- **On-start script**:
+
+```bash
+wget -q -O /app/models/inswapper_128_fp16.onnx "<model-url>" && /app/entrypoint.sh
+```
+
+Replace `<model-url>` with the download link from the [Deep-Live-Cam releases page](https://github.com/hacksider/Deep-Live-Cam).
+
+Upload your source face with `scp` after the instance starts:
+
+```bash
+scp -P <vast-port> source.jpg root@<vast-ip>:~/source.jpg
+# then inside the instance:
+cp ~/source.jpg /app/source.jpg
+```
+
+vast.ai pulls your image as the container filesystem — boot time is ~1 minute. After the first boot, use the vast.ai **snapshot** feature to save the instance state so subsequent rents skip the model download.
+
+### Option B — Run directly on the instance (no Docker Hub required)
+
+Rent a `nvidia/cuda:12.4.1-devel-ubuntu22.04` instance with the same ports as above, then use this on-start script:
+
+```bash
+apt-get update -q && apt-get install -y -q ffmpeg git libgl1 libglib2.0-0 \
+  software-properties-common wget xz-utils \
+  && add-apt-repository -y ppa:deadsnakes/ppa \
+  && apt-get install -y -q python3.11 python3.11-dev python3.11-venv
+
+wget -qO /tmp/get-pip.py https://bootstrap.pypa.io/get-pip.py \
+  && python3.11 /tmp/get-pip.py
+
+# install mediamtx
+wget -qO /tmp/mtx.tar.gz \
+  "$(wget -qO- https://api.github.com/repos/bluenviron/mediamtx/releases/latest \
+    | python3.11 -c "import json,sys; d=json.load(sys.stdin); \
+      print(next(a['browser_download_url'] for a in d['assets'] \
+        if 'linux_amd64.tar.gz' in a['name']))")" \
+  && tar -xzf /tmp/mtx.tar.gz -C /usr/local/bin mediamtx \
+  && chmod +x /usr/local/bin/mediamtx
+
+git clone --depth 1 https://github.com/soMallawa/deep-live-cam-remote /app
+git clone --depth 1 https://github.com/hacksider/Deep-Live-Cam /app/Deep-Live-Cam
+
+python3.11 -m pip install -q -r /app/requirements.txt
+grep -Ev '^(opencv-python|onnxruntime-gpu|onnxruntime-silicon)' \
+  /app/Deep-Live-Cam/requirements.txt \
+  | python3.11 -m pip install -q -r /dev/stdin
+
+mkdir -p /app/models
+wget -q -O /app/models/inswapper_128_fp16.onnx "<model-url>"
+# upload source.jpg via scp then: cp ~/source.jpg /app/source.jpg
+
+mediamtx /app/mediamtx.yml &
+python3.11 /app/bridge.py
+```
+
+This installs everything from scratch on each boot (~10 minutes). Use Option A for faster iteration.
+
+### Comparison
+
+| | Option A (Docker Hub) | Option B (direct) |
+|---|---|---|
+| Boot time | ~1 min (pull image) | ~10 min (install everything) |
+| Requires local Docker | Yes | No |
+| Persistence | vast.ai snapshot | vast.ai snapshot |
+
+### Port reference
+
+| Port | Protocol | Purpose |
+|---|---|---|
+| `8889` | TCP | WHIP ingest and WHEP playback (HTTP signaling) |
+| `8189` | UDP | WebRTC ICE media path |
+| `8554` | TCP | RTSP direct access (optional, for testing) |
+
+---
+
+## Quick Start (local Docker)
+
+To run locally for testing:
+
 ```bash
 git clone https://github.com/soMallawa/deep-live-cam-remote
 cd deep-live-cam-remote
 cp /path/to/source-face.jpg source.jpg
+# place inswapper_128_fp16.onnx in ./models/
 docker compose up --build
 ```
 
 The container prints the endpoints after startup:
 
 ```text
-OBS WHIP URL: http://<vast-ai-ip>:8889/cam_in/whip
-WHEP endpoint: http://<vast-ai-ip>:8889/cam_out/whep
+OBS WHIP URL: http://<host-ip>:8889/cam_in/whip
+WHEP endpoint: http://<host-ip>:8889/cam_out/whep
 ```
 
-On vast.ai, expose `8889/tcp` for WebRTC WHIP/WHEP signaling and `8189/udp` for WebRTC ICE media. Expose `8554/tcp` only if you want to test RTSP directly.
+**Send feed from phone (zero OBS)** using [droidcam-whip-c](https://github.com/soMallawa/droidcam-whip-c):
+
+```bash
+# Windows GUI
+droidcam-whip.exe --gui
+# CLI
+droidcam-whip.exe 192.168.1.100 rtsp://<host-ip>:8554/cam_in
+```
 
 ## OBS Setup
 
