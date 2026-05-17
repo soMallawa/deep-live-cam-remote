@@ -75,14 +75,19 @@ docker push yourdockerhub/deep-live-cam-remote:latest
 When renting on vast.ai:
 
 - **Image**: `yourdockerhub/deep-live-cam-remote:latest`
+- **Launch mode**: `Interactive shell server, SSH`
 - **Extra ports**: `8080/tcp`, `8889/tcp`, `8189/udp`, `8554/tcp`
 - **On-start script**:
 
 ```bash
-wget -q -O /app/models/inswapper_128_fp16.onnx "<model-url>" && /app/entrypoint.sh
+mkdir -p /app/models
+wget -q -O /app/models/inswapper_128_fp16.onnx "<model-url>"
+/app/entrypoint.sh
 ```
 
 Replace `<model-url>` with the direct download link from the Deep-Live-Cam releases page.
+
+> **Why SSH mode?** vast.ai overwrites the Docker entrypoint to set up its SSH server. The on-start script must call `/app/entrypoint.sh` explicitly at the end, which is what starts MediaMTX and the dashboard. Using "Docker ENTRYPOINT" mode causes the on-start script to be passed as a raw argument to the entrypoint rather than executed by bash.
 
 After the container starts, open `http://<vast-ai-ip>:8080`, upload your source face image via the dashboard, then click **Start Bridge**.
 
@@ -90,7 +95,7 @@ vast.ai pulls your image as the container filesystem — boot time is ~1 minute.
 
 ### Option B — Run directly on the instance (no Docker Hub required)
 
-Rent a `nvidia/cuda:12.4.1-devel-ubuntu22.04` instance with the same ports as above, then use this on-start script:
+Rent a `nvidia/cuda:12.4.1-devel-ubuntu22.04` instance with **Launch mode: `Interactive shell server, SSH`** and the same ports as above, then use this on-start script:
 
 ```bash
 apt-get update -q && apt-get install -y -q ffmpeg git libgl1 libglib2.0-0 \
