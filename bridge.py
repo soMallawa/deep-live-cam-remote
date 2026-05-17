@@ -203,7 +203,7 @@ def get_stream_properties(cap):
 def process_stream(cap, encoder, out_width, out_height, out_fps):
     frame_count = 0
     fps_started = time.time()
-    det_interval = max(1, FPS // 6)
+    det_interval = max(1, FPS // 3)
     det_count = 0
     cached_target_face = None
 
