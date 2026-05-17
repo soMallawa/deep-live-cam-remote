@@ -45,7 +45,7 @@ RUN python3.11 -m pip install --no-cache-dir --upgrade pip \
 
 RUN git clone --depth 1 https://github.com/hacksider/Deep-Live-Cam.git /app/Deep-Live-Cam \
     && if [ -f /app/Deep-Live-Cam/requirements.txt ]; then \
-      grep -Ev '^(opencv-python|onnxruntime-gpu|onnxruntime-silicon)' /app/Deep-Live-Cam/requirements.txt > /tmp/dlc-requirements.txt; \
+      grep -Ev '^(opencv-python|onnxruntime(-gpu|-silicon)?)' /app/Deep-Live-Cam/requirements.txt > /tmp/dlc-requirements.txt; \
       python3.11 -m pip install --no-cache-dir -r /tmp/dlc-requirements.txt; \
       python3.11 -m pip install --no-cache-dir -r /app/requirements.txt; \
     fi

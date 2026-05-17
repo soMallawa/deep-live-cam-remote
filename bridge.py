@@ -197,6 +197,9 @@ def get_stream_properties(cap):
         log(f"Stream did not report a valid FPS; using fallback {FPS}")
     else:
         fps = int(round(fps))
+    if fps > FPS:
+        log(f"Capping output FPS from {fps} to {FPS} (set FPS env var to raise this limit)")
+        fps = FPS
     return width, height, fps
 
 
@@ -207,9 +210,14 @@ def process_stream(cap, encoder, out_width, out_height, out_fps):
     det_count = 0
     cached_target_face = None
 
+    # timing accumulators (reset every 30 frames)
+    _t = {"read": 0.0, "detect": 0.0, "swap": 0.0, "post": 0.0, "write": 0.0, "n": 0}
+
     log(f"Processing started. Detection every {det_interval} frames.")
     while not stop_requested:
+        t0 = time.perf_counter()
         ret, frame = cap.read()
+        _t["read"] += time.perf_counter() - t0
         if not ret:
             log("Frame read failed; reconnecting to input stream...")
             return False, encoder
@@ -218,18 +226,27 @@ def process_stream(cap, encoder, out_width, out_height, out_fps):
             frame = cv2.resize(frame, (out_width, out_height), interpolation=cv2.INTER_LINEAR)
 
         det_count += 1
+        t1 = time.perf_counter()
         if det_count % det_interval == 0:
             face = detect_one_face_fast(frame)
             if face is not None:
                 cached_target_face = face
+        _t["detect"] += time.perf_counter() - t1
 
+        t2 = time.perf_counter()
         if cached_target_face is not None and source_face is not None:
             swapped_bboxes = []
             frame = swap_face(source_face, cached_target_face, frame)
             if hasattr(cached_target_face, "bbox"):
                 swapped_bboxes.append(cached_target_face.bbox.astype(int))
-            frame = apply_post_processing(frame, swapped_bboxes)
+        _t["swap"] += time.perf_counter() - t2
 
+        t3 = time.perf_counter()
+        if cached_target_face is not None and source_face is not None:
+            frame = apply_post_processing(frame, swapped_bboxes)
+        _t["post"] += time.perf_counter() - t3
+
+        t4 = time.perf_counter()
         try:
             encoder.stdin.write(frame.tobytes())
         except (BrokenPipeError, OSError):
@@ -238,13 +255,23 @@ def process_stream(cap, encoder, out_width, out_height, out_fps):
             encoder = start_encoder(RTSP_OUT, out_width, out_height, out_fps)
             if encoder is None:
                 return True, None
+        _t["write"] += time.perf_counter() - t4
 
+        _t["n"] += 1
         frame_count += 1
         elapsed = time.time() - fps_started
         if elapsed >= 5.0:
-            log(f"{frame_count} frames | {frame_count / elapsed:.1f} fps")
+            n = max(_t["n"], 1)
+            log(
+                f"{frame_count} frames | {frame_count / elapsed:.1f} fps | "
+                f"read={_t['read']/n*1000:.0f}ms  det={_t['detect']/n*1000:.0f}ms  "
+                f"swap={_t['swap']/n*1000:.0f}ms  post={_t['post']/n*1000:.0f}ms  "
+                f"write={_t['write']/n*1000:.0f}ms"
+            )
             frame_count = 0
             fps_started = time.time()
+            for k in _t:
+                _t[k] = 0.0 if k != "n" else 0
 
     return True, encoder
 
