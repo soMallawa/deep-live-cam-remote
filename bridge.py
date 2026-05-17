@@ -87,6 +87,9 @@ def load_source():
 
 
 def open_capture():
+    os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = (
+        "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|framedrop;1"
+    )
     cap = cv2.VideoCapture(RTSP_IN, cv2.CAP_FFMPEG)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     return cap
@@ -146,7 +149,7 @@ def start_encoder(rtsp_url, width, height, fps):
         "-bufsize",
         BITRATE,
         "-g",
-        str(fps),
+        str(max(1, fps // 2)),
         "-bf",
         "0",
         "-f",
