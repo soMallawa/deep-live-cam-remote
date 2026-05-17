@@ -39,6 +39,7 @@ RUN wget -qO /tmp/mediamtx.tar.gz \
 
 COPY requirements.txt /app/requirements.txt
 RUN python3.11 -m pip install --no-cache-dir --upgrade pip \
+    && python3.11 -m pip install --no-cache-dir --ignore-installed blinker \
     && python3.11 -m pip install --no-cache-dir -r /app/requirements.txt
 
 RUN git clone --depth 1 https://github.com/hacksider/Deep-Live-Cam.git /app/Deep-Live-Cam \
