@@ -42,9 +42,17 @@ MediaMTX handles ICE, DTLS, SRTP, WHIP, and WHEP. Deep-Live-Cam only sees RTSP i
 ## Quick Start
 
 Build and run locally or on a vast.ai instance:
-
+Build and run locally or on a vast.ai instance:
+**Send feed from phone (zero OBS):**
 ```bash
-git clone <your-repo-url> deep-live-cam-remote
+git clone https://github.com/soMallawa/droidcam-whip-c
+cd droidcam-whip-c && make
+./droidcam-whip 192.168.1.100 rtsp://<vast-ai-ip>:8554/cam_in
+```
+
+Or with OBS:
+```bash
+git clone https://github.com/soMallawa/deep-live-cam-remote
 cd deep-live-cam-remote
 cp /path/to/source-face.jpg source.jpg
 docker compose up --build
