@@ -2,3 +2,5 @@ opencv-python-headless>=4.9.0
 onnxruntime-gpu>=1.18.0
 insightface>=0.7.3
 numpy>=1.24.0
+flask>=3.0.0
+requests>=2.31.0

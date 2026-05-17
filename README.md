@@ -128,9 +128,30 @@ This installs everything from scratch on each boot (~10 minutes). Use Option A f
 
 | Port | Protocol | Purpose |
 |---|---|---|
+| `8080` | TCP | Web dashboard (start/stop bridge, upload face, view logs) |
 | `8889` | TCP | WHIP ingest and WHEP playback (HTTP signaling) |
 | `8189` | UDP | WebRTC ICE media path |
 | `8554` | TCP | RTSP direct access (optional, for testing) |
+
+---
+
+## Web Dashboard
+
+The container runs a web dashboard on port `8080` that lets you manage the bridge without SSH access.
+
+```text
+http://<vast-ai-ip>:8080
+```
+
+Features:
+
+- **Source Face** — upload or drag-and-drop a face image (jpg/png/webp). The image is saved to `/app/source.jpg` inside the container. You do not need to re-mount a volume or restart the container.
+- **Bridge Control** — start and stop `bridge.py` with a single click. The button shows the current state and is disabled when the action is not applicable.
+- **Connection URLs** — WHIP ingest, WHEP playback, and internal RTSP addresses populated from the container's host, ready to copy.
+- **Stream Status** — live readiness of `cam_in` and `cam_out` paths from the MediaMTX API, updated every 3 seconds.
+- **Bridge Logs** — real-time output from `bridge.py` delivered over Server-Sent Events with syntax highlighting, a 500-line history buffer, and auto-scroll.
+
+Add `8080/tcp` to the vast.ai extra ports when renting. The dashboard does not require a separate on-start script change — `entrypoint.sh` starts it automatically.
 
 ---
 
@@ -149,9 +170,12 @@ docker compose up --build
 The container prints the endpoints after startup:
 
 ```text
-OBS WHIP URL: http://<host-ip>:8889/cam_in/whip
-WHEP endpoint: http://<host-ip>:8889/cam_out/whep
+Web dashboard:       http://<host-ip>:8080
+OBS WHIP URL:        http://<host-ip>:8889/cam_in/whip
+WHEP endpoint:       http://<host-ip>:8889/cam_out/whep
 ```
+
+Open the dashboard to upload a source face image, start the bridge, and monitor logs without needing SSH.
 
 **Send feed from phone (zero OBS)** using [droidcam-whip-c](https://github.com/soMallawa/droidcam-whip-c):
 

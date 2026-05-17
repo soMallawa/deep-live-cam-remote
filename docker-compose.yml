@@ -3,6 +3,7 @@ services:
     build: .
     image: deep-live-cam-remote:latest
     ports:
+      - "8080:8080"
       - "8889:8889"
       - "8189:8189/udp"
       - "8554:8554"

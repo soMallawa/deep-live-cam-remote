@@ -51,6 +51,6 @@ RUN git clone --depth 1 https://github.com/hacksider/Deep-Live-Cam.git /app/Deep
 COPY . /app
 RUN chmod +x /app/entrypoint.sh /app/scripts/stream-in.sh
 
-EXPOSE 8889 8554 8189/udp
+EXPOSE 8080 8889 8554 8189/udp
 
 ENTRYPOINT ["/app/entrypoint.sh"]

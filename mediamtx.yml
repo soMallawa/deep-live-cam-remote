@@ -1,4 +1,7 @@
 # MediaMTX config - WebRTC WHIP/WHEP + RTSP proxy
+api: yes
+apiAddress: :9997
+
 rtspAddress: :8554
 rtspTransports: [tcp]
 rtspEncryption: "no"

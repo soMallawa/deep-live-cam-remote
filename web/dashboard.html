@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deep-Live-Cam Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0e0e11;
+      --surface: #18181f;
+      --border: #2a2a35;
+      --text: #e2e2ea;
+      --muted: #7a7a8f;
+      --accent: #6c63ff;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --radius: 8px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+
+    header h1 { font-size: 16px; font-weight: 600; flex: 1; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .pill.running { background: rgba(34,197,94,.15); color: var(--green); }
+    .pill.stopped { background: rgba(239,68,68,.15); color: var(--red); }
+
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+    .dot.pulse { animation: pulse 1.5s ease infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .35; }
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 16px;
+      padding: 20px;
+      max-width: 1300px;
+      margin: 0 auto;
+    }
+
+    .sidebar { grid-column: 1; display: flex; flex-direction: column; gap: 16px; }
+    .content { grid-column: 2; display: flex; flex-direction: column; gap: 16px; }
+    .full-width { grid-column: 1 / -1; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+
+    .card h2 {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: var(--muted);
+      margin-bottom: 14px;
+    }
+
+    /* Source face */
+    .face-preview {
+      width: 100%;
+      aspect-ratio: 1;
+      border-radius: 6px;
+      background: var(--bg);
+      border: 2px dashed var(--border);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: border-color .2s;
+      margin-bottom: 10px;
+      position: relative;
+    }
+    .face-preview:hover { border-color: var(--accent); }
+    .face-preview img { width: 100%; height: 100%; object-fit: cover; display: none; }
+    .face-preview .placeholder { color: var(--muted); font-size: 12px; text-align: center; padding: 12px; pointer-events: none; }
+    .face-preview input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .upload-hint { font-size: 11px; color: var(--muted); text-align: center; }
+
+    /* Bridge control */
+    .bridge-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+    .bridge-label { flex: 1; font-size: 13px; }
+    .status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--red); }
+    .status-dot.running { background: var(--green); animation: pulse 1.5s ease infinite; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity .15s;
+      font-family: inherit;
+    }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .btn.primary { background: var(--accent); color: #fff; width: 100%; }
+    .btn.danger  { background: var(--red);    color: #fff; width: 100%; }
+    .btn.ghost   { background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
+    .btn.sm      { padding: 4px 10px; font-size: 12px; width: auto; }
+    .btn:not(:disabled):hover { opacity: .85; }
+
+    /* URLs */
+    .url-item { margin-bottom: 10px; }
+    .url-item:last-child { margin-bottom: 0; }
+    .url-item label { font-size: 11px; color: var(--muted); display: block; margin-bottom: 4px; }
+    .url-value {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 6px 10px;
+    }
+    .url-value span {
+      flex: 1;
+      font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+      font-size: 12px;
+      word-break: break-all;
+    }
+    .copy-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 2px 4px;
+      border-radius: 3px;
+      font-size: 14px;
+      line-height: 1;
+      flex-shrink: 0;
+      transition: color .15s;
+      font-family: inherit;
+    }
+    .copy-btn:hover { color: var(--accent); }
+
+    /* Stream status */
+    .streams { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .stream-card { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 12px; }
+    .stream-name { font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .stream-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); flex-shrink: 0; }
+    .stream-dot.active { background: var(--green); animation: pulse 2s ease infinite; }
+    .kv { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; }
+    .kv span:first-child { color: var(--muted); }
+
+    /* Logs */
+    .logs-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .logs-header h2 { margin-bottom: 0; flex: 1; }
+
+    #log-box {
+      background: #09090c;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      height: 320px;
+      overflow-y: auto;
+      font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      color: #c8c8d8;
+    }
+    #log-box:empty::before { content: "No log output yet..."; color: var(--muted); }
+    .log-line { white-space: pre-wrap; word-break: break-word; }
+    .log-line.dash { color: #8b83ff; }
+    .log-line.err  { color: #f87171; }
+    .log-line.warn { color: var(--yellow); }
+
+    @media (max-width: 720px) {
+      main { grid-template-columns: 1fr; }
+      .sidebar, .content { grid-column: 1; }
+      .streams { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Deep-Live-Cam Remote</h1>
+  <div id="header-status" class="pill stopped">
+    <div class="dot"></div>Stopped
+  </div>
+</header>
+
+<main>
+  <div class="sidebar">
+    <div class="card">
+      <h2>Source Face</h2>
+      <div class="face-preview" id="face-drop">
+        <img id="face-img" alt="Source face">
+        <div class="placeholder" id="face-placeholder">Click or drop<br>a face image</div>
+        <input type="file" id="face-file" accept=".jpg,.jpeg,.png,.webp">
+      </div>
+      <p class="upload-hint" id="upload-status">jpg / png / webp</p>
+    </div>
+
+    <div class="card">
+      <h2>Bridge Control</h2>
+      <div class="bridge-row">
+        <div class="status-dot" id="bridge-dot"></div>
+        <span class="bridge-label" id="bridge-label">Stopped</span>
+      </div>
+      <button class="btn primary" id="start-btn" onclick="startBridge()">Start Bridge</button>
+      <div style="height:8px"></div>
+      <button class="btn danger" id="stop-btn" onclick="stopBridge()" disabled>Stop Bridge</button>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="card">
+      <h2>Connection URLs</h2>
+      <div class="url-item">
+        <label>WHIP ingest (OBS → container)</label>
+        <div class="url-value">
+          <span id="url-whip">—</span>
+          <button class="copy-btn" onclick="copyUrl('url-whip')" title="Copy">⎘</button>
+        </div>
+      </div>
+      <div class="url-item">
+        <label>WHEP playback (OBS Browser Source / viewer.html)</label>
+        <div class="url-value">
+          <span id="url-whep">—</span>
+          <button class="copy-btn" onclick="copyUrl('url-whep')" title="Copy">⎘</button>
+        </div>
+      </div>
+      <div class="url-item">
+        <label>RTSP in (internal)</label>
+        <div class="url-value">
+          <span id="url-rtsp-in">—</span>
+          <button class="copy-btn" onclick="copyUrl('url-rtsp-in')" title="Copy">⎘</button>
+        </div>
+      </div>
+      <div class="url-item">
+        <label>RTSP out (internal)</label>
+        <div class="url-value">
+          <span id="url-rtsp-out">—</span>
+          <button class="copy-btn" onclick="copyUrl('url-rtsp-out')" title="Copy">⎘</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Stream Status</h2>
+      <div class="streams">
+        <div class="stream-card">
+          <div class="stream-name">
+            <div class="stream-dot" id="dot-cam-in"></div>cam_in (input)
+          </div>
+          <div class="kv"><span>Ready</span><span id="cam-in-ready">—</span></div>
+          <div class="kv"><span>Source</span><span id="cam-in-source">—</span></div>
+          <div class="kv"><span>Readers</span><span id="cam-in-readers">—</span></div>
+        </div>
+        <div class="stream-card">
+          <div class="stream-name">
+            <div class="stream-dot" id="dot-cam-out"></div>cam_out (output)
+          </div>
+          <div class="kv"><span>Ready</span><span id="cam-out-ready">—</span></div>
+          <div class="kv"><span>Source</span><span id="cam-out-source">—</span></div>
+          <div class="kv"><span>Readers</span><span id="cam-out-readers">—</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card full-width">
+    <div class="logs-header">
+      <h2>Bridge Logs</h2>
+      <button class="btn sm ghost" onclick="clearLogs()">Clear</button>
+      <label style="font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px;cursor:pointer;">
+        <input type="checkbox" id="auto-scroll" checked style="accent-color:var(--accent);">
+        Auto-scroll
+      </label>
+      <div class="dot" id="sse-dot" style="color:var(--red);" title="SSE disconnected"></div>
+    </div>
+    <div id="log-box"></div>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+
+// --- log SSE ---
+let sseSource = null;
+
+function connectSSE() {
+  if (sseSource) { sseSource.close(); sseSource = null; }
+  const es = new EventSource("/api/logs");
+  sseSource = es;
+  es.onopen = () => {
+    $("sse-dot").style.color = "var(--green)";
+    $("sse-dot").title = "SSE connected";
+  };
+  es.onmessage = evt => {
+    let line;
+    try { line = JSON.parse(evt.data); } catch { line = evt.data; }
+    addLog(line);
+  };
+  es.onerror = () => {
+    $("sse-dot").style.color = "var(--red)";
+    $("sse-dot").title = "SSE disconnected — reconnecting...";
+    es.close();
+    sseSource = null;
+    setTimeout(connectSSE, 3000);
+  };
+}
+
+function addLog(line) {
+  const box = $("log-box");
+  const div = document.createElement("div");
+  div.className = "log-line";
+  if (line.startsWith("[dashboard]")) div.classList.add("dash");
+  else if (/error|exception|traceback/i.test(line)) div.classList.add("err");
+  else if (/warn/i.test(line)) div.classList.add("warn");
+  div.textContent = line;
+  box.appendChild(div);
+  while (box.childElementCount > 2000) box.removeChild(box.firstChild);
+  if ($("auto-scroll").checked) box.scrollTop = box.scrollHeight;
+}
+
+function clearLogs() { $("log-box").innerHTML = ""; }
+
+// --- status polling ---
+async function fetchStatus() {
+  try {
+    const r = await fetch("/api/status");
+    if (!r.ok) return;
+    applyStatus(await r.json());
+  } catch (_) {}
+}
+
+function applyStatus(d) {
+  const running = d.bridge_running;
+
+  const pill = $("header-status");
+  pill.className = "pill " + (running ? "running" : "stopped");
+  pill.innerHTML = `<div class="dot${running ? " pulse" : ""}"></div>${running ? "Running" : "Stopped"}`;
+
+  $("bridge-dot").className = "status-dot" + (running ? " running" : "");
+  $("bridge-label").textContent = running ? "Running" : "Stopped";
+  $("start-btn").disabled = running;
+  $("stop-btn").disabled = !running;
+
+  if (d.source_image_exists) {
+    const img = $("face-img");
+    if (img.style.display === "none") img.src = "/api/source-image?t=" + Date.now();
+    img.style.display = "block";
+    $("face-placeholder").style.display = "none";
+  } else {
+    $("face-img").style.display = "none";
+    $("face-placeholder").style.display = "";
+  }
+
+  const urls = d.urls || {};
+  $("url-whip").textContent    = urls.whip    || "—";
+  $("url-whep").textContent    = urls.whep    || "—";
+  $("url-rtsp-in").textContent = urls.rtsp_in || "—";
+  $("url-rtsp-out").textContent= urls.rtsp_out|| "—";
+
+  const paths = d.paths || {};
+  setPath("cam-in",  paths.cam_in  || {});
+  setPath("cam-out", paths.cam_out || {});
+}
+
+function setPath(prefix, info) {
+  const dot = $("dot-" + prefix);
+  dot.className = "stream-dot" + (info.ready ? " active" : "");
+  $(`${prefix}-ready`).textContent   = info.ready  ? "Yes" : "No";
+  $(`${prefix}-source`).textContent  = info.source_type  || "—";
+  $(`${prefix}-readers`).textContent = info.readers != null ? info.readers : "—";
+}
+
+// --- bridge control ---
+async function startBridge() {
+  $("start-btn").disabled = true;
+  try {
+    const r = await fetch("/api/start", { method: "POST" });
+    const d = await r.json();
+    addLog("[dashboard] " + d.message);
+  } catch (e) {
+    addLog("[dashboard] Error: " + e.message);
+    $("start-btn").disabled = false;
+  }
+  await fetchStatus();
+}
+
+async function stopBridge() {
+  $("stop-btn").disabled = true;
+  try {
+    const r = await fetch("/api/stop", { method: "POST" });
+    const d = await r.json();
+    addLog("[dashboard] " + d.message);
+  } catch (e) {
+    addLog("[dashboard] Error: " + e.message);
+    $("stop-btn").disabled = false;
+  }
+  await fetchStatus();
+}
+
+// --- face upload ---
+$("face-file").addEventListener("change", function () {
+  if (this.files[0]) uploadFace(this.files[0]);
+});
+
+const faceArea = $("face-drop");
+faceArea.addEventListener("dragover", e => { e.preventDefault(); faceArea.style.borderColor = "var(--accent)"; });
+faceArea.addEventListener("dragleave", () => { faceArea.style.borderColor = ""; });
+faceArea.addEventListener("drop", e => {
+  e.preventDefault();
+  faceArea.style.borderColor = "";
+  if (e.dataTransfer.files[0]) uploadFace(e.dataTransfer.files[0]);
+});
+
+async function uploadFace(file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  $("upload-status").textContent = "Uploading...";
+  try {
+    const r = await fetch("/api/upload", { method: "POST", body: fd });
+    const d = await r.json();
+    $("upload-status").textContent = d.message;
+    if (d.ok) {
+      const img = $("face-img");
+      img.src = "/api/source-image?t=" + Date.now();
+      img.style.display = "block";
+      $("face-placeholder").style.display = "none";
+      setTimeout(() => $("upload-status").textContent = "jpg / png / webp", 3000);
+    }
+  } catch (e) {
+    $("upload-status").textContent = "Upload error: " + e.message;
+  }
+}
+
+// --- copy URL ---
+function copyUrl(id) {
+  const text = $(id).textContent;
+  if (text !== "—") navigator.clipboard.writeText(text).catch(() => {});
+}
+
+// --- init ---
+fetchStatus();
+connectSSE();
+setInterval(fetchStatus, 3000);
+</script>
+</body>
+</html>
