@@ -1,11 +1,11 @@
 # Deep-Live-Cam Remote
 
-Remote GPU-accelerated real-time face swapping with Deep-Live-Cam, MediaMTX, and WebRTC WHIP/WHEP. The local machine sends camera video from OBS to a GPU container on vast.ai, the bridge runs the face swap pipeline, and OBS receives the processed feed back as a browser source.
+Remote GPU-accelerated real-time face swapping with Deep-Live-Cam, MediaMTX, and WebRTC WHIP/WHEP. A local machine (OBS or droidcam-whip-c) sends camera video to a GPU container on vast.ai, the bridge runs the face swap pipeline, and OBS receives the processed feed back as a browser source.
 
 ## Architecture
 
 ```text
-Local PC / OBS v30+
+Local PC / OBS v30+  (or droidcam-whip-c)
   WHIP output
       |
       | http://<vast-ip>:8889/cam_in/whip
@@ -31,17 +31,35 @@ Local PC / OBS Browser Source
 
 MediaMTX handles ICE, DTLS, SRTP, WHIP, and WHEP. Deep-Live-Cam only sees RTSP input and output.
 
+A web dashboard (`dashboard.py`) runs on port `8080` and manages the bridge process, handles face image uploads, and streams logs in real time.
+
 ## Prerequisites
 
-- A vast.ai NVIDIA GPU instance with Docker and NVIDIA Container Toolkit support.
-- A GPU with NVENC support, such as an RTX 3090, A4000, A5000, or similar.
-- OBS Studio 30 or newer on the local PC.
-- A source face image mounted or copied to `/app/source.jpg`.
-- Public access to `8889/tcp` and `8189/udp`. Expose `8554/tcp` only if testing RTSP directly.
+- A vast.ai NVIDIA GPU instance (RTX 3090, A4000, A5000, or similar) with NVENC support.
+- OBS Studio 30 or newer on the local PC, or [droidcam-whip-c](https://github.com/soMallawa/droidcam-whip-c) for phone input.
+- Public access to `8080/tcp`, `8889/tcp`, and `8189/udp`. Expose `8554/tcp` only if testing RTSP directly.
+- The `inswapper_128_fp16.onnx` model file from the [Deep-Live-Cam releases page](https://github.com/hacksider/Deep-Live-Cam).
+- A source face image (uploaded via the web dashboard after the container starts).
+
+## Web Dashboard
+
+The container exposes a web dashboard on port `8080`:
+
+```text
+http://<vast-ai-ip>:8080
+```
+
+| Feature | Description |
+|---|---|
+| **Source Face** | Upload or drag-and-drop a jpg/png/webp face image. Saved to `/app/source.jpg` in the container — no SSH or volume remount needed. |
+| **Bridge Control** | Start and stop `bridge.py` with one click. Shows running state in real time. |
+| **Connection URLs** | WHIP, WHEP, and internal RTSP addresses auto-populated from the container host, with copy buttons. |
+| **Stream Status** | Live readiness of `cam_in` and `cam_out` from the MediaMTX API, polled every 3 seconds. |
+| **Bridge Logs** | Real-time stdout/stderr from `bridge.py` over Server-Sent Events. 500-line history, auto-scroll, color coding. |
 
 ## Deploying on vast.ai
 
-vast.ai instances are Docker containers themselves, so `docker compose up` will not work there — nested Docker is not available. Use one of the two approaches below.
+vast.ai instances are Docker containers themselves, so `docker compose up` will not work — nested Docker is not available. Use one of the two approaches below.
 
 ### Option A — Docker Hub image (recommended)
 
@@ -57,24 +75,18 @@ docker push yourdockerhub/deep-live-cam-remote:latest
 When renting on vast.ai:
 
 - **Image**: `yourdockerhub/deep-live-cam-remote:latest`
-- **Extra ports**: `8889/tcp`, `8189/udp`, `8554/tcp`
+- **Extra ports**: `8080/tcp`, `8889/tcp`, `8189/udp`, `8554/tcp`
 - **On-start script**:
 
 ```bash
 wget -q -O /app/models/inswapper_128_fp16.onnx "<model-url>" && /app/entrypoint.sh
 ```
 
-Replace `<model-url>` with the download link from the [Deep-Live-Cam releases page](https://github.com/hacksider/Deep-Live-Cam).
+Replace `<model-url>` with the direct download link from the Deep-Live-Cam releases page.
 
-Upload your source face with `scp` after the instance starts:
+After the container starts, open `http://<vast-ai-ip>:8080`, upload your source face image via the dashboard, then click **Start Bridge**.
 
-```bash
-scp -P <vast-port> source.jpg root@<vast-ip>:~/source.jpg
-# then inside the instance:
-cp ~/source.jpg /app/source.jpg
-```
-
-vast.ai pulls your image as the container filesystem — boot time is ~1 minute. After the first boot, use the vast.ai **snapshot** feature to save the instance state so subsequent rents skip the model download.
+vast.ai pulls your image as the container filesystem — boot time is ~1 minute. After the first boot, use the vast.ai **snapshot** feature to save the instance state (including the model file) so subsequent rents skip the download.
 
 ### Option B — Run directly on the instance (no Docker Hub required)
 
@@ -108,11 +120,12 @@ grep -Ev '^(opencv-python|onnxruntime-gpu|onnxruntime-silicon)' \
 
 mkdir -p /app/models
 wget -q -O /app/models/inswapper_128_fp16.onnx "<model-url>"
-# upload source.jpg via scp then: cp ~/source.jpg /app/source.jpg
 
 mediamtx /app/mediamtx.yml &
-python3.11 /app/bridge.py
+python3.11 /app/dashboard.py
 ```
+
+After the container starts, open `http://<vast-ai-ip>:8080`, upload your source face image, then click **Start Bridge**.
 
 This installs everything from scratch on each boot (~10 minutes). Use Option A for faster iteration.
 
@@ -128,30 +141,10 @@ This installs everything from scratch on each boot (~10 minutes). Use Option A f
 
 | Port | Protocol | Purpose |
 |---|---|---|
-| `8080` | TCP | Web dashboard (start/stop bridge, upload face, view logs) |
+| `8080` | TCP | Web dashboard |
 | `8889` | TCP | WHIP ingest and WHEP playback (HTTP signaling) |
 | `8189` | UDP | WebRTC ICE media path |
 | `8554` | TCP | RTSP direct access (optional, for testing) |
-
----
-
-## Web Dashboard
-
-The container runs a web dashboard on port `8080` that lets you manage the bridge without SSH access.
-
-```text
-http://<vast-ai-ip>:8080
-```
-
-Features:
-
-- **Source Face** — upload or drag-and-drop a face image (jpg/png/webp). The image is saved to `/app/source.jpg` inside the container. You do not need to re-mount a volume or restart the container.
-- **Bridge Control** — start and stop `bridge.py` with a single click. The button shows the current state and is disabled when the action is not applicable.
-- **Connection URLs** — WHIP ingest, WHEP playback, and internal RTSP addresses populated from the container's host, ready to copy.
-- **Stream Status** — live readiness of `cam_in` and `cam_out` paths from the MediaMTX API, updated every 3 seconds.
-- **Bridge Logs** — real-time output from `bridge.py` delivered over Server-Sent Events with syntax highlighting, a 500-line history buffer, and auto-scroll.
-
-Add `8080/tcp` to the vast.ai extra ports when renting. The dashboard does not require a separate on-start script change — `entrypoint.sh` starts it automatically.
 
 ---
 
@@ -162,7 +155,6 @@ To run locally for testing:
 ```bash
 git clone https://github.com/soMallawa/deep-live-cam-remote
 cd deep-live-cam-remote
-cp /path/to/source-face.jpg source.jpg
 # place inswapper_128_fp16.onnx in ./models/
 docker compose up --build
 ```
@@ -175,9 +167,9 @@ OBS WHIP URL:        http://<host-ip>:8889/cam_in/whip
 WHEP endpoint:       http://<host-ip>:8889/cam_out/whep
 ```
 
-Open the dashboard to upload a source face image, start the bridge, and monitor logs without needing SSH.
+Open the dashboard, upload a source face, and click **Start Bridge**. The `source.jpg` volume mount in `docker-compose.yml` is optional — the dashboard upload writes directly to `/app/source.jpg` inside the container.
 
-**Send feed from phone (zero OBS)** using [droidcam-whip-c](https://github.com/soMallawa/droidcam-whip-c):
+**Send feed from a phone (zero OBS)** using [droidcam-whip-c](https://github.com/soMallawa/droidcam-whip-c):
 
 ```bash
 # Windows GUI
@@ -199,17 +191,13 @@ In OBS 30+, configure WHIP output:
 - Keyframe interval: 1 second
 - B-frames: disabled if your encoder exposes the option
 
-Start streaming. MediaMTX publishes this as:
-
-```text
-rtsp://127.0.0.1:8554/cam_in
-```
+Start streaming. MediaMTX publishes this as `rtsp://127.0.0.1:8554/cam_in` inside the container.
 
 ### Receive Processed Video
 
 Add an OBS Browser Source and load `web/viewer.html`.
 
-If the HTML is served from the same host and port as MediaMTX, it auto-uses:
+If the file is served from the same host as MediaMTX, it auto-uses:
 
 ```text
 http://<host>:8889/cam_out/whep
@@ -225,24 +213,18 @@ Set the Browser Source resolution to match your stream, for example `1280x720`.
 
 ## Direct RTSP Test
 
-The helper script shows a direct RTSP publishing path for local testing:
+The helper script publishes the OBS Virtual Camera through FFmpeg on Windows DirectShow:
 
 ```bash
 ./scripts/stream-in.sh <vast-ai-ip>
 ```
 
-This uses the OBS Virtual Camera through FFmpeg on Windows DirectShow and publishes to:
-
-```text
-rtsp://<vast-ai-ip>:8554/cam_in
-```
-
-For production low-latency browser playback, prefer OBS WHIP ingest on `/cam_in/whip`.
+This pushes to `rtsp://<vast-ai-ip>:8554/cam_in`. For production low-latency browser playback, prefer WHIP ingest on `/cam_in/whip`.
 
 ## Environment Variables
 
 | Variable | Default | Description |
-| --- | --- | --- |
+|---|---|---|
 | `RTSP_IN` | `rtsp://127.0.0.1:8554/cam_in` | Bridge input stream from MediaMTX. |
 | `RTSP_OUT` | `rtsp://127.0.0.1:8554/cam_out` | Bridge output stream back to MediaMTX. |
 | `SOURCE_IMAGE` | `/app/source.jpg` | Source face image path. |
@@ -251,26 +233,35 @@ For production low-latency browser playback, prefer OBS WHIP ingest on `/cam_in/
 | `FPS` | `30` | Output encoder frame rate and keyframe interval basis. |
 | `BITRATE` | `4000k` | NVENC H.264 target bitrate. |
 | `MAX_INPUT_RETRIES` | `0` | Input retry limit. `0` means retry forever. |
+| `DASHBOARD_HOST` | `0.0.0.0` | Dashboard bind address. |
+| `DASHBOARD_PORT` | `8080` | Dashboard HTTP port. |
+| `MEDIAMTX_API` | `http://127.0.0.1:9997` | MediaMTX REST API base URL used by the dashboard. |
 
 ## Troubleshooting
 
 ### No face detected in source image
 
-Check that `/app/source.jpg` exists, is readable, and contains a clear frontal face. With Docker Compose, the default mount is:
+Upload a clear frontal face photo via the dashboard. If uploading via SCP instead:
 
-```yaml
-./source.jpg:/app/source.jpg:ro
+```bash
+scp -P <vast-port> source.jpg root@<vast-ip>:/app/source.jpg
 ```
 
-### RTSP timeout or bridge waits forever
+Then restart the bridge from the dashboard so it picks up the new image.
 
-The bridge starts before OBS publishes. Start OBS WHIP streaming to:
+### Bridge does not start
+
+Check the dashboard log viewer for Python import errors. The most common cause is a missing model file — confirm `/app/models/inswapper_128_fp16.onnx` exists inside the container.
+
+### No video on cam_in / bridge log shows RTSP timeout
+
+The bridge waits for `cam_in` before producing output. Start OBS WHIP streaming to:
 
 ```text
 http://<vast-ai-ip>:8889/cam_in/whip
 ```
 
-Then watch the container logs for `Input stream`.
+Watch the dashboard Stream Status card — `cam_in` will turn green once OBS connects.
 
 ### GPU or NVENC not available
 
@@ -280,26 +271,24 @@ Confirm the container can see the GPU:
 docker run --rm --gpus all nvidia/cuda:12.4.1-devel-ubuntu22.04 nvidia-smi
 ```
 
-If FFmpeg logs mention `h264_nvenc` failure, choose a vast.ai image/host with NVIDIA runtime support and a GPU that supports NVENC.
+If the bridge log shows `h264_nvenc not available, falling back to libx264`, the container does not have NVENC access. Choose a vast.ai host with an NVIDIA runtime and a GPU that supports NVENC.
 
 ### WHEP player does not connect
 
-Use the exact endpoint:
+Use the exact endpoint from the dashboard Connection URLs card:
 
 ```text
 http://<vast-ai-ip>:8889/cam_out/whep
 ```
 
-Make sure the bridge is already publishing `cam_out`. If `viewer.html` is opened from a local file, include the `?whep=` query string.
-
-Also verify that `8189/udp` is reachable. MediaMTX uses `8889/tcp` for WHIP/WHEP HTTP signaling and `8189/udp` for the WebRTC media path.
+`cam_out` only becomes active after the bridge is running and has received at least one frame on `cam_in`. Verify `8189/udp` is reachable — MediaMTX uses it for the WebRTC media path.
 
 ### Latency is too high
 
-Use hardware H.264 encoding in OBS, disable B-frames, keep the keyframe interval at 1 second, and use a nearby vast.ai region. Browser playback latency also depends on network route and packet loss.
+Use hardware H.264 encoding in OBS, disable B-frames, set keyframe interval to 1 second, and choose a nearby vast.ai region. Browser playback latency also depends on network route and packet loss.
 
 ## References
 
 - Deep-Live-Cam: https://github.com/hacksider/Deep-Live-Cam
 - MediaMTX: https://github.com/bluenviron/mediamtx
-- MediaMTX WebRTC WHIP/WHEP documentation: https://github.com/bluenviron/mediamtx
+- droidcam-whip-c: https://github.com/soMallawa/droidcam-whip-c
