@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deep-Live-Cam WHEP Viewer</title>
+  <style>
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+      color: #fff;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    video {
+      width: 100vw;
+      height: 100vh;
+      object-fit: contain;
+      background: #000;
+      display: block;
+    }
+
+    #status {
+      position: fixed;
+      left: 12px;
+      bottom: 12px;
+      max-width: calc(100vw - 24px);
+      padding: 6px 8px;
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.72);
+      color: #fff;
+      font-size: 13px;
+      line-height: 1.35;
+      pointer-events: none;
+      word-break: break-word;
+    }
+
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <video id="video" autoplay playsinline muted></video>
+  <div id="status">Connecting...</div>
+
+  <script>
+    const video = document.getElementById("video");
+    const statusEl = document.getElementById("status");
+
+    let pc = null;
+    let resourceUrl = null;
+
+    function setStatus(message, persistent = true) {
+      statusEl.textContent = message;
+      statusEl.classList.toggle("hidden", !persistent);
+    }
+
+    function whepUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const explicit = params.get("whep");
+      if (explicit) {
+        return explicit;
+      }
+
+      if (window.location.protocol === "file:") {
+        setStatus("Add ?whep=http://HOST:8889/cam_out/whep when opening this file locally.");
+        throw new Error("Missing WHEP URL");
+      }
+
+      const protocol = window.location.protocol === "https:" ? "https:" : "http:";
+      return `${protocol}//${window.location.host}/cam_out/whep`;
+    }
+
+    function waitForIceGatheringComplete(peerConnection) {
+      if (peerConnection.iceGatheringState === "complete") {
+        return Promise.resolve();
+      }
+
+      return new Promise((resolve) => {
+        const onStateChange = () => {
+          if (peerConnection.iceGatheringState === "complete") {
+            peerConnection.removeEventListener("icegatheringstatechange", onStateChange);
+            resolve();
+          }
+        };
+        peerConnection.addEventListener("icegatheringstatechange", onStateChange);
+      });
+    }
+
+    async function connect() {
+      const url = whepUrl();
+      setStatus(`Connecting to ${url}`);
+
+      pc = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+      });
+
+      pc.addTransceiver("video", { direction: "recvonly" });
+      pc.addTransceiver("audio", { direction: "recvonly" });
+
+      pc.addEventListener("track", (event) => {
+        if (video.srcObject !== event.streams[0]) {
+          video.srcObject = event.streams[0];
+        }
+      });
+
+      pc.addEventListener("connectionstatechange", () => {
+        const state = pc.connectionState;
+        if (state === "connected") {
+          setStatus("Connected", false);
+        } else if (state === "failed" || state === "closed" || state === "disconnected") {
+          setStatus(`WebRTC ${state}`);
+        } else {
+          setStatus(`WebRTC ${state}`);
+        }
+      });
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      await waitForIceGatheringComplete(pc);
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/sdp"
+        },
+        body: pc.localDescription.sdp
+      });
+
+      if (!response.ok) {
+        throw new Error(`WHEP request failed: HTTP ${response.status}`);
+      }
+
+      const location = response.headers.get("Location");
+      if (location) {
+        resourceUrl = new URL(location, url).toString();
+      }
+
+      const answer = await response.text();
+      await pc.setRemoteDescription({ type: "answer", sdp: answer });
+    }
+
+    async function disconnect() {
+      if (resourceUrl) {
+        try {
+          await fetch(resourceUrl, { method: "DELETE" });
+        } catch (error) {
+          console.warn(error);
+        }
+      }
+
+      if (pc) {
+        pc.close();
+      }
+    }
+
+    window.addEventListener("beforeunload", disconnect);
+
+    connect().catch((error) => {
+      console.error(error);
+      setStatus(error.message);
+    });
+  </script>
+</body>
+</html>

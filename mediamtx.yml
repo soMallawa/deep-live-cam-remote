@@ -1,0 +1,25 @@
+# MediaMTX config - WebRTC WHIP/WHEP + RTSP proxy
+rtspAddress: :8554
+rtspTransports: [tcp]
+rtspEncryption: "no"
+
+webrtcAddress: :8889
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: ''
+webrtcIPsFromInterfaces: true
+webrtcAdditionalHosts: []
+
+rtmp: false
+hls: false
+srt: false
+
+paths:
+  cam_in:
+    source: publisher
+    sourceProtocol: automatic
+  cam_out:
+    source: publisher
+    sourceProtocol: automatic
+
+logLevel: info
+logDestinations: [stdout]

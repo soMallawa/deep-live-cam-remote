@@ -1,0 +1,20 @@
+services:
+  dlc-remote:
+    build: .
+    image: deep-live-cam-remote:latest
+    ports:
+      - "8889:8889"
+      - "8189:8189/udp"
+      - "8554:8554"
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+    volumes:
+      - ./models:/app/Deep-Live-Cam/models
+      - ./source.jpg:/app/source.jpg:ro
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
